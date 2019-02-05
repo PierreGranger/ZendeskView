@@ -1,5 +1,11 @@
 <?php
-
+/**
+ * @package Zendesk_View
+ * @version 0.1
+ */
+/*
+Classe d'utilisation de l'API de Zendesk.
+*/
 class PG_Zendesk_Class {
 
     private $subdomain ;
@@ -292,74 +298,5 @@ class PG_Zendesk_Class {
         if ( $u ) return $u['name'] ;
         else return $id ;
     }
-
-/*
-    public function showConditionsView($id) {
-        $view = $this->getView($id) ;
-        if ( ! $view ) return ;
-        $ret = '<ul class="conditions">' ;
-            foreach ( $view['conditions']['all'] as $c )
-            {
-                echo '<li>'.$this->getCondition($c).'</li>' ;
-            }
-            if ( sizeof($view['conditions']['any']) > 0 )
-            {
-                echo '<li>' ;
-                    echo '<ul>' ;
-                    foreach ( $view['conditions']['any'] as $c )
-                    {
-                        echo '<li>ou... '.$this->getCondition($c).'</li>' ;
-                    }
-                    echo '</ul>' ;
-                echo '</li>' ;
-            }
-        $ret .= '</ul>' ;
-        echo $ret ;
-    }
-*/
-/*
-    public function getCondition($c) {
-        $ret = null ;
-        if ( preg_match('#^custom_fields_([0-9]+)$#',$c['field'],$match) ) $ret .= $this->getValue('field',$match[1],'title') ;
-        elseif ( $c['field'] == 'ticket_form_id' ) $ret .= 'Formulaire' ;
-        else $ret .= $c['field'] ;
-        $ret .= ' ' ;
-        if ( $c['operator'] == 'is' ) $ret .= '=' ;
-        elseif ( $c['operator'] == 'less_than' ) $ret .= '<' ;
-        else $ret .= $c['operator'] ;
-        $ret .= ' ' ;
-        if ( $c['field'] == 'group_id' ) $ret .= $this->getValue('group',$c['value'],'name') ;
-        if ( $c['field'] == 'ticket_form_id' ) $ret .= $this->getValue('form',$c['value'],'name') ;
-        elseif ( preg_match('#^custom_fields_([0-9]+)$#',$c['field'],$match) ) $ret .= $this->getFieldOption($match[1],$c['value']) ;
-        else $ret .= $c['value'] ;
-        return $ret ;
-    }
-*/
-    
-/*
-    public function getValue($type,$id,$champ='title') {
-        $funcName = 'get'.ucfirst($type) ;
-        $array = $this->$funcName($id) ;
-        return $array[$champ] ;
-    }
-*/
-/*
-    public function getFieldOption($id_field,$value) {
-        $ticket = $this->getField($id_field) ;
-        if ( ! $ticket ) return false ;
-        if ( isset($ticket['custom_field_options']) ) 
-            foreach ( $ticket['custom_field_options'] as $o )
-            {
-                if ( $o['id'] == $value ) return $o['name'] ;
-                if ( $o['value'] == $value ) return $o['name'] ;
-            }
-        if ( isset($ticket['system_field_options']) ) 
-            foreach ( $ticket['system_field_options'] as $o )
-            {
-                if ( $o['id'] == $value ) return $o['name'] ;
-                if ( $o['value'] == $value ) return $o['name'] ;
-            }
-    }
-*/
 
 }
