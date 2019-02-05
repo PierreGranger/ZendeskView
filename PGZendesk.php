@@ -1,0 +1,365 @@
+<?php
+
+class PG_Zendesk_Class {
+
+    private $subdomain ;
+    private $baseurl ;
+    private $username ;
+    private $token ;
+    private $userid ;
+    private $debug = false ;
+
+    public static $champs = Array('subdomain','baseurl','username','token','userid') ;
+
+    private $cache = Array() ;
+    private $expire = 60*15 ; // Secondes
+
+    private static $champsDate = Array('updated','created','updated_at','created_at') ;
+    private static $dateFormat = 'd/m/Y' ;
+
+    private static $champsUser = Array('assignee','assignee_id','requester','requester_id','submitter','submitter_id') ;
+
+    private static $presentations = Array('table','liste') ;
+
+    public function __construct($params) {
+        foreach ( PG_Zendesk_Class::$champs as $c )
+            if ( isset($params[$c]) ) $this->$c = $params[$c] ; else throw new Exception(__CLASS__.':Missing '.$c) ;
+        if ( isset($params['debug']) ) $this->debug = $params['debug'] ;
+    }
+
+    public function getView($id) {
+        return @$this->getCurl('/api/v2/views/'.$id.'.json')['view'] ;
+    }
+
+    public function getViewTickets($id) {
+        $tickets = $this->getCurl('/api/v2/views/'.$id.'/tickets.json')['tickets'] ;
+        if ( $tickets === false ) return false ;
+        foreach ( $tickets as $k => $v )
+        {
+            if ( isset($v['fields']) )
+            {
+                $tmp_fields = $v['fields'] ;
+                $tickets[$k]['fields'] = Array() ;
+                foreach ( $tmp_fields as $f )
+                {
+                    $tickets[$k]['fields'][$f['id']] = $f['value'] ;
+                }
+            }
+        }
+        return $tickets ;
+    }
+
+    public function getGroup($id) {
+        return $this->getCurl('/api/v2/groups/'.$id.'.json')['group'] ;
+    }
+
+    public function getForm($id) {
+        return $this->getCurl('/api/v2/ticket_forms/'.$id.'.json')['ticket_form'] ;
+    }
+
+    public function getUser($id) {
+        return $this->getCurl('/api/v2/users/'.$id.'.json')['user'] ;
+    }
+
+    public function getField($id) {
+        $tmp = $this->getCurl('/api/v2/ticket_fields/'.$id.'.json')['ticket_field'] ;
+        if ( $tmp === false ) return false ;
+        if ( isset($tmp['custom_field_options']) )
+        {
+            $tmp['custom_field_options_by_value'] = Array() ;
+            foreach ( $tmp['custom_field_options'] as $i_opt => $opt )
+                $tmp['custom_field_options_by_value'][$opt['value']] = $opt ;
+            $tmp['custom_field_options_by_id'] = Array() ;
+                foreach ( $tmp['custom_field_options'] as $i_opt => $opt )
+                    $tmp['custom_field_options_by_id'][$opt['id']] = $opt ;
+        }
+        return $tmp ;
+    }
+
+    public function getCurl($path,$ret='array') {
+
+        $cacheKey = preg_replace('#[^a-zA-Z0-9]#','_',$path) ;
+
+        if ( ! isset($this->cache['curl'][$path]) )
+        {
+            $url = $this->baseurl.$path ;
+            $cacheRet = $this->cacheGet($cacheKey) ;
+            if ( $cacheRet === false )
+            {
+                $ch = curl_init() ;
+                curl_setopt($ch,CURLOPT_URL,$url) ;
+                curl_setopt($ch, CURLOPT_USERPWD, $this->username . "/token:" . $this->token) ;
+                curl_setopt($ch,CURLOPT_RETURNTRANSFER,1) ;
+                $result_raw = curl_exec($ch) ;
+                $this->cache['curl'][$path] = json_decode($result_raw,true) ;
+                $this->cacheSet($cacheKey,$result_raw) ;
+                if ( isset($this->cache['curl'][$path]['error']) )
+                {
+                    $this->debug($this->cache['curl'][$path]) ;
+                    $this->cache['curl'][$path] = false ;
+                    return false ;
+                }
+            }
+            else
+            {
+                $this->cache['curl'][$path] = json_decode($cacheRet,true) ;
+            }
+            if ( $this->debug ) $this->debug($url) ;
+        }
+        if ( $ret == 'json' ) return json_encode($this->cache['curl'][$path],JSON_PRETTY_PRINT) ;
+        return $this->cache['curl'][$path] ;
+    }
+
+    public function cacheSet($cle,$valeur) {
+        if ( isset($this->cacheClass) && $this->cacheClass ) return $this->cacheClass->set($cle,$valeur) ;
+        elseif ( function_exists('wp_cache_set') ) return wp_cache_set( $cle, $valeur, 'PGZendesk', $this->expire ) ;
+        return false ;
+    }
+
+    public function cacheGet($cle) {
+        if ( isset($this->cacheClass) && $this->cacheClass ) return $this->cacheClass->get($cle) ;
+        elseif ( function_exists('wp_cache_get') )return wp_cache_get( $cle, 'PGZendesk' ) ;
+        return false ;
+    }
+
+    public function debug($array) {
+        if ( ! $this->debug ) return false ;
+        if ( is_array($array) )
+            echo '<script>console.log('.addslashes(json_encode($array)).')</script>' ;
+        else
+            echo '<script>console.log("'.addslashes($array).'")</script>' ;
+    }
+
+    public function showView($cle,$atts,$content) {
+        
+        $view = $this->getView($cle) ;
+        $tickets = $this->getViewTickets($cle) ;
+
+        $classes = Array() ;
+
+        $presentation = ( isset($atts['presentation']) && in_array($atts['presentation'],self::$presentations) ) ? $atts['presentation'] : @array_shift(@array_values(self::$presentations)) ;
+
+        echo '<div id="'.$cle.'" class="'.implode(' ',$classes).'">' ;
+
+            echo '<h2>' ;
+                if ( $presentation == 'table' ) echo '<a href="'.$this->baseurl.'agent/filters/'.$view['id'].'" onclick="window.open(this.href);return false ;">' ;
+                    echo $view['title'] ;
+                if ( $presentation == 'table' ) echo '</a>' ;
+            echo '</h2>' ;
+
+            if ( isset($view['description']) && $view['description'] ) echo '<p>'.$view['description'].'</p>' ;
+            $wc = @$this->getCurl('/api/v2/views/'.$view['id'].'/count.json')['view_count']['value'] ;
+            if ( $wc ) echo '<span>'.$wc.' '.translate('tickets').'</span>' ;
+
+            $customfields = Array() ;
+
+            if ( $presentation == 'table' )
+            {
+                echo '<table class="wp-list-table widefat fixed striped posts">' ;
+                    
+                    echo '<thead>' ;
+                        echo '<tr>' ;
+                        foreach ( $view['execution']['columns'] as $c )
+                        {
+                            echo '<th>' ;
+                                echo $c['title'] ;
+                            echo '</th>' ;
+                        }
+                        echo '</tr>' ;
+                    echo '</thead>' ;
+                    
+                    $id_champ_group = $view['execution']['group']['id'] ;
+                    $title_champ_group = $view['execution']['group']['title'] ;
+                    $last_group = null ;
+
+                    echo '<tbody>' ;
+                        $tickets = $this->getViewTickets($view['id']) ;
+                        foreach ( $tickets as $ticket )
+                        {
+                            $group_value = $this->getTicketValue($ticket,$id_champ_group) ;
+                            if ( $last_group != $group_value )
+                            {
+                                echo '<tr>' ;
+                                    echo '<th colspan="'.sizeof($view['execution']['columns']).'">'.$title_champ_group.' : '.$group_value.'</th>' ;
+                                echo '</tr>' ;
+                            }
+                            echo '<tr>' ;
+                                foreach ( $view['execution']['columns'] as $c )
+                                {
+                                    echo '<td>' ;
+                                        if ( $c['id'] == 'subject' ) echo '<a href="'.$this->baseurl.'/agent/tickets/'.$ticket['id'].'" onclick="window.open(this.href);return false ;">' ;
+                                        echo $this->getTicketValue($ticket,$c['id']) ;
+                                        if ( $c['id'] == 'subject' ) echo '</a>' ;
+                                    echo '</td>' ;
+                                }
+                            echo '</tr>' ;
+                            $last_group = $group_value ;
+                        }
+                    echo '</tbody>' ;
+
+                echo '</table>' ;
+            }
+            elseif ( $presentation == 'liste' )
+            {
+                $id_champ_group = $view['execution']['group']['id'] ;
+                $title_champ_group = $view['execution']['group']['title'] ;
+                $last_group = null ;
+
+                    $tickets = $this->getViewTickets($view['id']) ;
+                    foreach ( $tickets as $ticket )
+                    {
+                        $group_value = $this->getTicketValue($ticket,$id_champ_group) ;
+                        if ( $last_group != $group_value )
+                        {
+                            if ( $last_group != null ) echo "\n\t".'</ul>' ;
+                            echo "\n\t".'<h3>' ;
+                                echo $title_champ_group.' : '.$group_value ;
+                            echo '</h3>' ;
+                            echo "\n\t".'<ul>' ;
+                        }
+                        echo "\n\t\t".'<li>' ;
+                            $infos = Array() ;
+                            foreach ( $view['execution']['columns'] as $c )
+                            {
+                                if ( $c['id'] !== 'subject' ) continue ;
+                                $info = null ;
+                                $info .= $this->getTicketValue($ticket,$c['id']) ;
+                                if ( $info != null ) $infos[] = $info ;
+                            }
+                            if ( sizeof($infos) > 0 ) echo implode(', ',$infos) ;
+                        echo '</li>' ;
+                        $last_group = $group_value ;
+                    }
+                    echo "\n\t".'</ul>' ;
+            }
+
+
+            
+            
+        echo '</div>' ;
+    }
+
+    /**
+     * Renvoie la clé utilisée sur le ticket selon la clé utilisée sur la vue
+     * Ex : "requester" sur la view correspond à "requester_id" sur le ticket
+     * 
+     */
+    public function getTicketKey($cle_champ_view) {
+        switch($cle_champ_view) {
+            case 'ticket_id' : return 'id' ;
+            case 'requester' : 
+            case 'assignee' : 
+            case 'organisation' : 
+            case 'group' : 
+            case 'assignee' : return $cle_champ_view.'_id' ;
+            case 'created' :
+            case 'updated' : return $cle_champ_view.'_at' ;
+            default : return $cle_champ_view ;
+        } ;
+    }
+
+    public function getTicketValue($ticket,$cle_champ_view) {
+
+        $ret = null ;
+
+        $cle_champ_ticket = $this->getTicketKey($cle_champ_view) ; // ticket_id => id, assignee_id => assignee
+        if ( is_int($cle_champ_ticket) ) // On est sur un custom field
+        {
+            $valeur_field = $ticket['fields'][$cle_champ_ticket] ;
+            $field = $this->getField($cle_champ_ticket) ;
+            if ( $field && isset($field['custom_field_options_by_value'][$valeur_field]) )
+            {
+                $ret .= $field['custom_field_options_by_value'][$valeur_field]['name'] ;
+            }
+        }
+        elseif ( isset($ticket[$cle_champ_ticket]) )
+        {
+            if ( in_array($cle_champ_ticket,self::$champsDate) ) $ret .= $this->showDate($ticket[$cle_champ_ticket]) ;
+            elseif ( in_array($cle_champ_ticket,self::$champsUser) ) $ret .= $this->showUser($ticket[$cle_champ_ticket]) ;
+            else $ret .= $ticket[$cle_champ_ticket] ;
+        }
+
+        return $ret ;
+    }
+
+    public function showDate($d) {
+        $d = new DateTime($d) ;
+        return $d->format(self::$dateFormat) ;
+    }
+
+    public function showUser($id) {
+        $u = $this->getUser($id) ;
+        if ( $u ) return $u['name'] ;
+        else return $id ;
+    }
+
+/*
+    public function showConditionsView($id) {
+        $view = $this->getView($id) ;
+        if ( ! $view ) return ;
+        $ret = '<ul class="conditions">' ;
+            foreach ( $view['conditions']['all'] as $c )
+            {
+                echo '<li>'.$this->getCondition($c).'</li>' ;
+            }
+            if ( sizeof($view['conditions']['any']) > 0 )
+            {
+                echo '<li>' ;
+                    echo '<ul>' ;
+                    foreach ( $view['conditions']['any'] as $c )
+                    {
+                        echo '<li>ou... '.$this->getCondition($c).'</li>' ;
+                    }
+                    echo '</ul>' ;
+                echo '</li>' ;
+            }
+        $ret .= '</ul>' ;
+        echo $ret ;
+    }
+*/
+/*
+    public function getCondition($c) {
+        $ret = null ;
+        if ( preg_match('#^custom_fields_([0-9]+)$#',$c['field'],$match) ) $ret .= $this->getValue('field',$match[1],'title') ;
+        elseif ( $c['field'] == 'ticket_form_id' ) $ret .= 'Formulaire' ;
+        else $ret .= $c['field'] ;
+        $ret .= ' ' ;
+        if ( $c['operator'] == 'is' ) $ret .= '=' ;
+        elseif ( $c['operator'] == 'less_than' ) $ret .= '<' ;
+        else $ret .= $c['operator'] ;
+        $ret .= ' ' ;
+        if ( $c['field'] == 'group_id' ) $ret .= $this->getValue('group',$c['value'],'name') ;
+        if ( $c['field'] == 'ticket_form_id' ) $ret .= $this->getValue('form',$c['value'],'name') ;
+        elseif ( preg_match('#^custom_fields_([0-9]+)$#',$c['field'],$match) ) $ret .= $this->getFieldOption($match[1],$c['value']) ;
+        else $ret .= $c['value'] ;
+        return $ret ;
+    }
+*/
+    
+/*
+    public function getValue($type,$id,$champ='title') {
+        $funcName = 'get'.ucfirst($type) ;
+        $array = $this->$funcName($id) ;
+        return $array[$champ] ;
+    }
+*/
+/*
+    public function getFieldOption($id_field,$value) {
+        $ticket = $this->getField($id_field) ;
+        if ( ! $ticket ) return false ;
+        if ( isset($ticket['custom_field_options']) ) 
+            foreach ( $ticket['custom_field_options'] as $o )
+            {
+                if ( $o['id'] == $value ) return $o['name'] ;
+                if ( $o['value'] == $value ) return $o['name'] ;
+            }
+        if ( isset($ticket['system_field_options']) ) 
+            foreach ( $ticket['system_field_options'] as $o )
+            {
+                if ( $o['id'] == $value ) return $o['name'] ;
+                if ( $o['value'] == $value ) return $o['name'] ;
+            }
+    }
+*/
+
+}
