@@ -6,7 +6,7 @@
 /*
 Classe d'utilisation de l'API de Zendesk.
 */
-class PG_Zendesk_Class {
+class PG_Zendesk {
 
     private $subdomain ;
     private $baseurl ;
@@ -28,7 +28,7 @@ class PG_Zendesk_Class {
     private static $presentations = Array('table','liste') ;
 
     public function __construct($params) {
-        foreach ( PG_Zendesk_Class::$champs as $c )
+        foreach ( self::$champs as $c )
             if ( isset($params[$c]) ) $this->$c = $params[$c] ; else throw new Exception(__CLASS__.':Missing '.$c) ;
         if ( isset($params['debug']) ) $this->debug = $params['debug'] ;
     }
@@ -211,32 +211,41 @@ class PG_Zendesk_Class {
                 $title_champ_group = $view['execution']['group']['title'] ;
                 $last_group = null ;
 
+                $groupes = Array() ;
+
                     $tickets = $this->getViewTickets($view['id']) ;
                     foreach ( $tickets as $ticket )
                     {
                         $group_value = $this->getTicketValue($ticket,$id_champ_group) ;
-                        if ( $last_group != $group_value )
+                        if ( ! $group_value ) $group_value = 'null' ;
+                        if ( ! isset($groupes[$group_value]) )
                         {
-                            if ( $last_group != null ) echo "\n\t".'</ul>' ;
-                            echo "\n\t".'<h3>' ;
-                                echo $title_champ_group.' : '.$group_value ;
-                            echo '</h3>' ;
-                            echo "\n\t".'<ul>' ;
+                            $groupes[$group_value] = Array('titre'=>$group_value,'tickets'=>Array()) ;
                         }
-                        echo "\n\t\t".'<li>' ;
-                            $infos = Array() ;
-                            foreach ( $view['execution']['columns'] as $c )
-                            {
-                                if ( $c['id'] !== 'subject' ) continue ;
-                                $info = null ;
-                                $info .= $this->getTicketValue($ticket,$c['id']) ;
-                                if ( $info != null ) $infos[] = $info ;
-                            }
-                            if ( sizeof($infos) > 0 ) echo implode(', ',$infos) ;
-                        echo '</li>' ;
+                        
+                        $infos = Array() ;
+                        foreach ( $view['execution']['columns'] as $c )
+                        {
+                            if ( $c['id'] !== 'subject' ) continue ;
+                            $info = null ;
+                            $info .= $this->getTicketValue($ticket,$c['id']) ;
+                            if ( $info != null ) $infos[] = $info ;
+                        }
+                        if ( sizeof($infos) > 0 ) $groupes[$group_value]['tickets'][] = $infos ;
+                        
                         $last_group = $group_value ;
                     }
-                    echo "\n\t".'</ul>' ;
+
+                    foreach ( $groupes as $k => $groupe )
+                    {
+                        if ( $groupe['titre'] != 'null' ) echo "\n\t".'<h3>'.$groupe['titre'].'</h3>' ;
+                        echo "\n\t".'<ul>' ;
+                        foreach ( $groupe['tickets'] as $ticket_infos )
+                        {
+                            echo "\n\t\t".'<li>'.implode(', ',$ticket_infos).'</li>' ;
+                        }
+                        echo "\n\t".'</ul>' ;
+                    }
             }
 
 

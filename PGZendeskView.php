@@ -30,9 +30,11 @@ class PG_Zendesk_View {
         add_action('admin_init',array($this,'register_settings')) ;
         add_shortcode('pg_zendesk_view',array($this,'view_html')) ;
         $params_zd = Array() ;
-        foreach ( PG_Zendesk_Class::$champs as $c )
+        foreach ( PG_Zendesk::$champs as $c )
             $params_zd[$c] = get_option('pgzd_'.$c) ;
-        $this->Zendesk = new PG_Zendesk_Class($params_zd) ;
+        $this->Zendesk = new PG_Zendesk($params_zd) ;
+        //register_activation_hook(__FILE__, array('Zendesk_View', 'install')) ;
+        register_uninstall_hook(__FILE__, array('Zendesk_View', 'uninstall')) ;
     }
 
     public function add_admin_menu() {
@@ -46,7 +48,7 @@ class PG_Zendesk_View {
         <form method="post" action="options.php">
             <?php
                 settings_fields('pg_zendesk_options') ;
-                foreach ( PG_Zendesk_Class::$champs as $c )
+                foreach ( PG_Zendesk::$champs as $c )
                 {
                     $value = get_option('pgzd_'.$c) ;
                     echo '<p>' ;
@@ -61,7 +63,7 @@ class PG_Zendesk_View {
     }
 
     public function register_settings() {
-        foreach ( PG_Zendesk_Class::$champs as $c )
+        foreach ( PG_Zendesk::$champs as $c )
             register_setting('pg_zendesk_options','pgzd_'.$c) ;
     }
 
@@ -70,6 +72,13 @@ class PG_Zendesk_View {
         error_reporting(E_ALL) ;
         if ( ! $this->Zendesk ) return ;
         $this->Zendesk->showView($atts['id'],$atts,$content) ;
+    }
+
+    //public static function install() { }
+
+    public static function uninstall() { 
+        foreach ( PG_Zendesk::$champs as $c )
+            delete_option('pgzd_'.$c) ;
     }
 
 }
