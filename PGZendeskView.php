@@ -33,8 +33,8 @@ class PG_Zendesk_View {
         foreach ( PG_Zendesk::$champs as $c )
             $params_zd[$c] = get_option('pgzd_'.$c) ;
         $this->Zendesk = new PG_Zendesk($params_zd) ;
-        //register_activation_hook(__FILE__, array('Zendesk_View', 'install')) ;
-        register_uninstall_hook(__FILE__, array('Zendesk_View', 'uninstall')) ;
+        //register_activation_hook(__FILE__, array($this, 'install')) ;
+        register_uninstall_hook(__FILE__, array($this, 'uninstall')) ;
     }
 
     public function add_admin_menu() {
